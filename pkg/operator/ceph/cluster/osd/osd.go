@@ -767,7 +767,7 @@ func getTopologyFromNode(ctx context.Context, clientset kubernetes.Interface, d 
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get the node for topology affinity")
 	}
-	_, topologyAffinity := topology.ExtractOSDTopologyFromLabels(node.Labels)
+	_, topologyAffinity, _ := topology.ExtractOSDTopologyFromLabels(node.Labels)
 	logger.Infof("found osd %d topology affinity at %q", osd.ID, topologyAffinity)
 	return topologyAffinity, nil
 }
@@ -827,7 +827,10 @@ func getNode(ctx context.Context, clientset kubernetes.Interface, nodeName strin
 }
 
 func updateLocationWithNodeLabels(location *[]string, nodeLabels map[string]string) string {
-	topology, topologyAffinity := topology.ExtractOSDTopologyFromLabels(nodeLabels)
+	topology, topologyAffinity, duplicateValues := topology.ExtractOSDTopologyFromLabels(nodeLabels)
+	if len(duplicateValues) != 0 {
+		logger.Warningf("Found duplicate location values with labels: %v", duplicateValues)
+	}
 
 	keys := make([]string, 0, len(topology))
 	for k := range topology {

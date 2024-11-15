@@ -46,15 +46,16 @@ const (
 	labelHostname       = "kubernetes.io/hostname"
 )
 
-// ExtractOSDTopologyFromLabels extracts rook topology from labels and returns a map from topology type to value
-func ExtractOSDTopologyFromLabels(labels map[string]string) (map[string]string, string) {
-	topology, topologyAffinity := extractTopologyFromLabels(labels)
+// ExtractOSDTopologyFromLabels extracts rook topology from labels and returns a map from topology type to value,
+// as well as values that were provided via multiple labels
+func ExtractOSDTopologyFromLabels(labels map[string]string) (map[string]string, string, map[string][]string) {
+	topology, topologyAffinity, duplicateValues := extractTopologyFromLabels(labels)
 
 	// Ensure the topology names are normalized for CRUSH
 	for name, value := range topology {
 		topology[name] = client.NormalizeCrushName(value)
 	}
-	return topology, topologyAffinity
+	return topology, topologyAffinity, duplicateValues
 }
 
 func rookTopologyLabelsOrdered() []string {
@@ -84,8 +85,9 @@ func kubernetesTopologyLabelToCRUSHLabel(label string) string {
 	return crushLabel[len(crushLabel)-1]
 }
 
-// ExtractTopologyFromLabels extracts rook topology from labels and returns a map from topology type to value
-func extractTopologyFromLabels(labels map[string]string) (map[string]string, string) {
+// ExtractTopologyFromLabels extracts rook topology from labels and returns a map from topology type to value,
+// along with which labels had duplicate values
+func extractTopologyFromLabels(labels map[string]string) (map[string]string, string, map[string][]string) {
 	topology := make(map[string]string)
 
 	// The topology affinity for the osd is the lowest topology label found in the hierarchy,
@@ -107,19 +109,25 @@ func extractTopologyFromLabels(labels map[string]string) (map[string]string, str
 	}
 	// iterate in lowest to highest order as the lowest level should be sustained and higher level duplicate
 	// should be removed
-	duplicateTopology := make(map[string]int)
+	duplicateTopology := make(map[string][]string)
 	for i := len(allKubernetesTopologyLabels) - 1; i >= 0; i-- {
 		topologyLabel := allKubernetesTopologyLabels[i]
 		if value, ok := labels[topologyLabel]; ok {
 			if _, ok := duplicateTopology[value]; ok {
 				delete(topology, kubernetesTopologyLabelToCRUSHLabel(topologyLabel))
-			} else {
-				duplicateTopology[value] = 1
 			}
+			duplicateTopology[value] = append(duplicateTopology[value], topologyLabel)
 		}
 	}
 
-	return topology, topologyAffinity
+	// remove non-duplicate entries
+	for value, duplicateKeys := range duplicateTopology {
+		if len(duplicateKeys) <= 1 {
+			delete(duplicateTopology, value)
+		}
+	}
+
+	return topology, topologyAffinity, duplicateTopology
 }
 
 func formatTopologyAffinity(label, value string) string {

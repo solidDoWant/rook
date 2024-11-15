@@ -50,7 +50,14 @@ func TestCleanTopologyLabels(t *testing.T) {
 		"topology.rook.io/room":       "test",
 		"topology.rook.io/chassis":    "test",
 		"topology.rook.io/pod":        "test"}
-	topology, affinity := ExtractOSDTopologyFromLabels(nodeLabels)
+	duplicateValuesExpected := map[string][]string{
+		"test": {
+			"topology.rook.io/chassis",
+			"topology.rook.io/pod",
+			"topology.rook.io/room",
+		},
+	}
+	topology, affinity, duplicateValues := ExtractOSDTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 6, len(topology))
 	assert.Equal(t, "r-region", topology["region"])
 	assert.Equal(t, "host-name", topology["host"])
@@ -61,32 +68,35 @@ func TestCleanTopologyLabels(t *testing.T) {
 	assert.Equal(t, "test", topology["chassis"])
 	assert.Equal(t, "", topology["pod"])
 	assert.Equal(t, "", topology["room"])
-
+	assert.Equal(t, duplicateValuesExpected, duplicateValues)
 }
 
 func TestTopologyLabels(t *testing.T) {
 	nodeLabels := map[string]string{}
-	topology, affinity := extractTopologyFromLabels(nodeLabels)
+	topology, affinity, duplicateValues := extractTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 0, len(topology))
 	assert.Equal(t, "", affinity)
+	assert.Equal(t, 0, len(duplicateValues))
 
 	// invalid non-namespaced zone and region labels are simply ignored
 	nodeLabels = map[string]string{
 		"region": "badregion",
 		"zone":   "badzone",
 	}
-	topology, affinity = extractTopologyFromLabels(nodeLabels)
+	topology, affinity, duplicateValues = extractTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 0, len(topology))
 	assert.Equal(t, "", affinity)
+	assert.Equal(t, 0, len(duplicateValues))
 
 	// invalid zone and region labels are simply ignored
 	nodeLabels = map[string]string{
 		"topology.rook.io/region": "r1",
 		"topology.rook.io/zone":   "z1",
 	}
-	topology, affinity = extractTopologyFromLabels(nodeLabels)
+	topology, affinity, duplicateValues = extractTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 0, len(topology))
 	assert.Equal(t, "", affinity)
+	assert.Equal(t, 0, len(duplicateValues))
 
 	// load all the expected labels
 	nodeLabels = map[string]string{
@@ -96,7 +106,7 @@ func TestTopologyLabels(t *testing.T) {
 		"topology.rook.io/row":        "row1",
 		"topology.rook.io/datacenter": "d1",
 	}
-	topology, affinity = extractTopologyFromLabels(nodeLabels)
+	topology, affinity, duplicateValues = extractTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 5, len(topology))
 	assert.Equal(t, "r1", topology["region"])
 	assert.Equal(t, "myhost", topology["host"])
@@ -104,14 +114,16 @@ func TestTopologyLabels(t *testing.T) {
 	assert.Equal(t, "row1", topology["row"])
 	assert.Equal(t, "d1", topology["datacenter"])
 	assert.Equal(t, "topology.rook.io/rack=rack1", affinity)
+	assert.Equal(t, 0, len(duplicateValues))
 
 	// invalid labels under topology.rook.io return an error
 	nodeLabels = map[string]string{
 		"topology.rook.io/row/bad": "r1",
 	}
-	topology, affinity = extractTopologyFromLabels(nodeLabels)
+	topology, affinity, duplicateValues = extractTopologyFromLabels(nodeLabels)
 	assert.Equal(t, 0, len(topology))
 	assert.Equal(t, "", affinity)
+	assert.Equal(t, 0, len(duplicateValues))
 }
 
 func TestGetDefaultTopologyLabels(t *testing.T) {
